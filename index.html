@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام رصد الغياب - ثانوية أمامة بنت بشر</title>
+    <!-- تحميل Tailwind CSS للتنسيق -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- تحميل مكتبات Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/11.0.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.0.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore-compat.js"></script>
+    <!-- مكتبة ExcelJS لتصدير التقارير -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- خط تجول من جوجل -->
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Tajawal', sans-serif; background-color: #f0f2f5; }
+        .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); }
+        .input-field { transition: all 0.3s ease; border: 2px solid #e2e8f0; }
+        .input-field:focus { border-color: #2563eb; box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1); }
+        .animate-in { animation: fadeIn 0.4s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        /* إلغاء الإمالة تماماً من التطبيق */
+        * { font-style: normal !important; }
+    </style>
+</head>
+<body class="min-h-screen bg-slate-100 text-slate-900 flex flex-col">
+
+    <div id="app" class="max-w-7xl mx-auto px-4 py-6 flex-grow w-full">
+        <!-- الهيدر الرئيسي -->
+        <header class="glass-card mb-8 p-6 rounded-[2.5rem] shadow-xl flex flex-col lg:flex-row justify-between items-center gap-6 border-b-4 border-blue-600">
+            <div class="flex items-center gap-5">
+                <div class="bg-blue-600 p-4 rounded-3xl text-white shadow-blue-200 shadow-2xl rotate-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                </div>
+                <div>
+                    <h1 class="text-2xl md:text-3xl font-black text-slate-800">ثانوية أمامة بنت بشر</h1>
+                    <p class="text-blue-600 font-bold tracking-tight">نظام حصر الغياب الرقمي المتزامن</p>
+                </div>
+            </div>
+
+            <div class="flex flex-wrap justify-center gap-3">
+                <div id="sync-indicator" class="flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-2xl text-xs font-bold text-slate-500">
+                    <div class="w-2 h-2 rounded-full bg-slate-300"></div>
+                    جاري الربط بالسحابة...
+                </div>
+                <button onclick="exportFullReport()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-2xl font-black flex items-center gap-2 transition-all shadow-lg active:scale-95">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    تصدير ملف الإكسل النهائي
+                </button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <!-- الشريط الجانبي (Sidebar) -->
+            <aside class="lg:col-span-3 space-y-6">
+                <div class="glass-card p-6 rounded-[2rem] shadow-md">
+                    <h2 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 border-r-4 border-blue-500 pr-2">إعدادات الجلسة</h2>
+
+                    <div class="space-y-5">
+                        <div class="group">
+                            <label class="block text-sm font-black mb-2 text-slate-700">التاريخ</label>
+                            <input type="date" id="dateInput" onchange="refreshView()" class="w-full p-4 bg-slate-50 rounded-2xl outline-none input-field font-bold text-blue-700">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-black mb-2 text-slate-700">الحصة الدراسية</label>
+                            <select id="periodSelect" onchange="refreshView()" class="w-full p-4 bg-slate-50 rounded-2xl outline-none input-field font-bold">
+                                <option value="1">الحصة الأولى</option>
+                                <option value="2">الحصة الثانية</option>
+                                <option value="3">الحصة الثالثة</option>
+                                <option value="4">الحصة الرابعة</option>
+                                <option value="5">الحصة الخامسة</option>
+                                <option value="6">الحصة السادسة</option>
+                                <option value="7">الحصة السابعة</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-black mb-2 text-slate-700">المرحلة</label>
+                            <select id="gradeSelect" onchange="updateClassOptions()" class="w-full p-4 bg-slate-50 rounded-2xl outline-none input-field font-bold">
+                                <option value="">اختر المرحلة</option>
+                                <option value="10">الصف العاشر</option>
+                                <option value="11-sci">11 علمي</option>
+                                <option value="11-lit">11 أدبي</option>
+                                <option value="12-sci">12 علمي</option>
+                                <option value="12-lit">12 أدبي</option>
+                            </select>
+                        </div>
+
+                        <div id="classContainer" class="hidden animate-in">
+                            <label class="block text-sm font-black mb-2 text-slate-700">الفصل الدراسي</label>
+                            <select id="classSelect" onchange="loadAttendance()" class="w-full p-4 bg-blue-50 rounded-2xl outline-none border-2 border-blue-200 font-black text-blue-800">
+                                <!-- سيتم تعبئته عبر الجافا سكريبت -->
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-blue-900 p-6 rounded-[2rem] text-white shadow-2xl relative overflow-hidden group">
+                    <div class="relative z-10">
+                        <h3 class="font-black text-lg mb-2">تنبيه للمعلمات</h3>
+                        <p class="text-blue-200 text-sm leading-relaxed">التاريخ مضبوط تلقائياً على اليوم. يرجى التأكد من اختيار الحصة الصحيحة قبل إدخال الأسماء.</p>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- لوحة العمل الرئيسية -->
+            <main class="lg:col-span-9">
+                <div id="placeholder" class="glass-card h-full min-h-[500px] rounded-[3rem] flex flex-col items-center justify-center text-slate-300 border-4 border-dashed border-slate-200">
+                    <div class="p-8 bg-slate-50 rounded-full mb-6">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="opacity-20"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    </div>
+                    <p class="text-xl font-black text-slate-400">يرجى اختيار المرحلة والفصل للبدء</p>
+                </div>
+
+                <div id="mainForm" class="hidden space-y-6 animate-in">
+                    <!-- معلومات المادة والمعلمة -->
+                    <div class="glass-card p-8 rounded-[2.5rem] shadow-md grid grid-cols-1 md:grid-cols-2 gap-6 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-2 h-full bg-blue-600"></div>
+                        <div>
+                            <label class="block text-sm font-black mb-2 text-slate-500">المادة الدراسية</label>
+                            <input type="text" id="subjectInput" oninput="autoSave()" placeholder="مثال: لغة عربية" class="w-full p-4 bg-slate-50 rounded-2xl outline-none input-field font-bold text-lg">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-black mb-2 text-slate-500">اسم المعلمة</label>
+                            <input type="text" id="teacherInput" oninput="autoSave()" placeholder="اسمكِ الكريم" class="w-full p-4 bg-slate-50 rounded-2xl outline-none input-field font-bold text-lg">
+                        </div>
+                    </div>
+
+                    <!-- قائمة رصد الأسماء -->
+                    <div class="glass-card rounded-[2.5rem] shadow-xl overflow-hidden">
+                        <div class="bg-slate-800 p-6 flex justify-between items-center">
+                            <h3 class="text-white font-black flex items-center gap-2">
+                                <span class="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
+                                أسماء الطالبات الغائبات
+                            </h3>
+                            <button onclick="confirmClear()" class="text-red-400 hover:text-red-300 text-xs font-black">حذف الكل</button>
+                        </div>
+
+                        <div id="namesGrid" class="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 bg-white">
+                            <!-- سيتم توليد حقول الأسماء هنا -->
+                        </div>
+
+                        <div class="p-6 bg-blue-50 border-t border-blue-100 flex justify-center items-center gap-4">
+                            <span class="text-blue-900 font-black">إجمالي الغياب:</span>
+                            <span id="totalBadge" class="bg-blue-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl shadow-lg">0</span>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- التذييل (Footer) المعدل -->
+    <footer class="mt-12 mb-6 text-center">
+        <div class="max-w-4xl mx-auto px-6 py-4 border-t border-slate-200">
+            <div class="flex flex-row justify-center items-center gap-4 md:gap-8 text-slate-600 font-bold text-sm">
+                <span>إعداد المعلمة: شيرين ناصف</span>
+                <span class="w-1.5 h-1.5 bg-slate-300 rounded-full"></span>
+                <span>مع تحيات قسم الحاسوب</span>
+                <span class="w-1.5 h-1.5 bg-slate-300 rounded-full"></span>
+                <span>مديرة المدرسة: أ. عائشة الكندري</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // إعدادات Firebase
+        // ملاحظة: القيم يتم تمريرها تلقائياً من بيئة التشغيل
+        const firebaseConfig = JSON.parse(__firebase_config);
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'omama-attendance-system';
+
+        const PERIOD_NAMES = { "1":"الأولى", "2":"الثانية", "3":"الثالثة", "4":"الرابعة", "5":"الخامسة", "6":"السادسة", "7":"السابعة" };
+        const GRADE_CONFIG = {
+            "10": { name: "الصف العاشر", classes: 6 },
+            "11-sci": { name: "11 علمي", classes: 4 },
+            "11-lit": { name: "11 أدبي", classes: 2 },
+            "12-sci": { name: "12 علمي", classes: 4 },
+            "12-lit": { name: "12 أدبي", classes: 2 }
+        };
+
+        let currentData = { subject: '', teacher: '', names: Array(15).fill('') };
+        let allCloudData = [];
+        let saveTimer;
+
+        // عند تحميل الصفحة
+        window.onload = function() {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            document.getElementById('dateInput').value = `${year}-${month}-${day}`;
+            initAuth();
+        };
+
+        async function initAuth() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await auth.signInWithCustomToken(__initial_auth_token);
+                } else {
+                    await auth.signInAnonymously();
+                }
+                document.getElementById('sync-indicator').innerHTML = `<div class="w-2 h-2 rounded-full bg-green-500"></div> متصل بالسحابة ✅`;
+                listenToCloud();
+            } catch (e) {
+                document.getElementById('sync-indicator').innerHTML = `⚠️ عطل في المزامنة`;
+            }
+        }
+
+        function listenToCloud() {
+            db.collection('artifacts').doc(appId).collection('public').doc('data').collection('attendance')
+                .onSnapshot(snap => {
+                    allCloudData = snap.docs.map(doc => doc.data());
+                    if (!document.getElementById('mainForm').classList.contains('hidden')) {
+                        loadAttendance();
+                    }
+                }, () => {
+                    document.getElementById('sync-indicator').innerHTML = `⚠️ خطأ اتصال`;
+                });
+        }
+
+        function updateClassOptions() {
+            const grade = document.getElementById('gradeSelect').value;
+            const container = document.getElementById('classContainer');
+            const select = document.getElementById('classSelect');
+
+            if (!grade) {
+                container.classList.add('hidden');
+                document.getElementById('mainForm').classList.add('hidden');
+                document.getElementById('placeholder').classList.remove('hidden');
+                return;
+            }
+
+            container.classList.remove('hidden');
+            const config = GRADE_CONFIG[grade];
+            let html = `<option value="">اختر الفصل...</option>`;
+            for(let i=1; i<=config.classes; i++) {
+                const label = grade.startsWith('10') ? `10-${i}` : (grade.includes('sci') ? `${grade.split('-')[0]}ع${i}` : `${grade.split('-')[0]}أ${i}`);
+                html += `<option value="${i}">${label}</option>`;
+            }
+            select.innerHTML = html;
+        }
+
+        function loadAttendance() {
+            const date = document.getElementById('dateInput').value;
+            const grade = document.getElementById('gradeSelect').value;
+            const classNum = document.getElementById('classSelect').value;
+            const period = document.getElementById('periodSelect').value;
+
+            if(!date || !grade || !classNum) return;
+
+            document.getElementById('placeholder').classList.add('hidden');
+            document.getElementById('mainForm').classList.remove('hidden');
+
+            const id = `${date}_G${grade}_P${period}_C${classNum}`;
+            const existing = allCloudData.find(d => d.id === id);
+
+            if (existing) {
+                currentData = {
+                    subject: existing.subject || '',
+                    teacher: existing.teacher || '',
+                    names: [...(existing.names || Array(15).fill(''))]
+                };
+            } else {
+                currentData = { subject: '', teacher: '', names: Array(15).fill('') };
+            }
+
+            document.getElementById('subjectInput').value = currentData.subject;
+            document.getElementById('teacherInput').value = currentData.teacher;
+            renderNames();
+        }
+
+        function renderNames() {
+            const grid = document.getElementById('namesGrid');
+            grid.innerHTML = '';
+            for(let i=0; i<15; i++) {
+                grid.innerHTML += `
+                    <div class="relative">
+                        <span class="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-300">${i+1}</span>
+                        <input type="text" value="${currentData.names[i] || ''}"
+                            oninput="updateName(${i}, this.value)"
+                            placeholder="اسم الطالبة..."
+                            class="w-full pr-10 pl-4 py-3 bg-slate-50 rounded-xl border-2 border-transparent focus:border-blue-500 outline-none font-bold text-sm">
+                    </div>
+                `;
+            }
+            updateTotal();
+        }
+
+        function updateName(index, val) {
+            currentData.names[index] = val;
+            updateTotal();
+            autoSave();
+        }
+
+        function updateTotal() {
+            const count = currentData.names.filter(n => n && n.trim() !== "").length;
+            document.getElementById('totalBadge').innerText = count;
+        }
+
+        function autoSave() {
+            clearTimeout(saveTimer);
+            document.getElementById('sync-indicator').innerHTML = `<div class="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></div> جاري الحفظ...`;
+
+            saveTimer = setTimeout(async () => {
+                const date = document.getElementById('dateInput').value;
+                const grade = document.getElementById('gradeSelect').value;
+                const classNum = document.getElementById('classSelect').value;
+                const period = document.getElementById('periodSelect').value;
+
+                currentData.subject = document.getElementById('subjectInput').value;
+                currentData.teacher = document.getElementById('teacherInput').value;
+
+                const id = `${date}_G${grade}_P${period}_C${classNum}`;
+
+                try {
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('attendance').doc(id).set({
+                        ...currentData,
+                        id, date, grade, classNum, period
+                    });
+                    document.getElementById('sync-indicator').innerHTML = `<div class="w-2 h-2 rounded-full bg-green-500"></div> تم الحفظ سحابياً ✅`;
+                } catch(e) {
+                    document.getElementById('sync-indicator').innerHTML = `⚠️ فشل الحفظ`;
+                }
+            }, 800);
+        }
+
+        function confirmClear() {
+            if(confirm("هل أنتِ متأكدة من مسح جميع الأسماء لهذا الفصل؟")) {
+                currentData.names = Array(15).fill('');
+                renderNames();
+                autoSave();
+            }
+        }
+
+        function refreshView() {
+            if(!document.getElementById('mainForm').classList.contains('hidden')) {
+                loadAttendance();
+            }
+        }
+
+        function exportFullReport() {
+            const date = document.getElementById('dateInput').value;
+            const wb = XLSX.utils.book_new();
+
+            Object.keys(GRADE_CONFIG).forEach(gradeKey => {
+                const config = GRADE_CONFIG[gradeKey];
+                const gradeData = allCloudData.filter(d => d.date === date && d.grade === gradeKey);
+                if(gradeData.length === 0) return;
+
+                const rows = [];
+                rows.push([`سجل حصر الغياب اليومي ثانوية أمامة بنت بشر`, "", "", "", "", "", "التاريخ:", date]);
+                rows.push([config.name]);
+                rows.push([]);
+
+                let totalGradeAbsence = 0;
+
+                for(let p=1; p<=7; p++) {
+                    const periodData = gradeData.filter(d => d.period == p);
+                    if(periodData.length === 0) continue;
+
+                    rows.push([`الحصة ${PERIOD_NAMES[p]}`]);
+                    const classRow = ["الفصل"];
+                    const subRow = ["المادة"];
+                    const teachRow = ["المعلمة"];
+
+                    for(let c=1; c<=config.classes; c++) {
+                        const label = gradeKey.startsWith('10') ? `10-${c}` : (gradeKey.includes('sci') ? `${gradeKey.split('-')[0]}ع${c}` : `${gradeKey.split('-')[0]}أ${c}`);
+                        classRow.push(label);
+                        const d = periodData.find(x => x.classNum == c) || {subject:'', teacher:''};
+                        subRow.push(d.subject);
+                        teachRow.push(d.teacher);
+                    }
+                    rows.push(classRow, subRow, teachRow);
+
+                    for(let i=0; i<15; i++) {
+                        const nameRow = [i+1];
+                        for(let c=1; c<=config.classes; c++) {
+                            const d = periodData.find(x => x.classNum == c);
+                            nameRow.push(d && d.names[i] ? d.names[i] : "");
+                        }
+                        rows.push(nameRow);
+                    }
+
+                    const totalPeriodRow = ["إجمالي الحصة"];
+                    let periodTotal = 0;
+                    for(let c=1; c<=config.classes; c++) {
+                        const d = periodData.find(x => x.classNum == c);
+                        const count = d ? d.names.filter(n => n && n.trim() !== "").length : 0;
+                        totalPeriodRow.push(count);
+                        periodTotal += count;
+                    }
+                    totalPeriodRow.push("المجموع للحصة:", periodTotal);
+                    rows.push(totalPeriodRow, []);
+                    totalGradeAbsence += periodTotal;
+                }
+
+                rows.push([]);
+                rows.push(["الإجمالي العام لغياب المرحلة (كل الحصص):", totalGradeAbsence]);
+                rows.push([""]);
+                rows.push(["إعداد المعلمة: شيرين ناصف"]);
+                rows.push(["مع تحيات قسم الحاسوب"]);
+                rows.push(["مديرة المدرسة: أ. عائشة الكندري"]);
+
+                const ws = XLSX.utils.aoa_to_sheet(rows);
+                XLSX.utils.book_append_sheet(wb, ws, config.name);
+            });
+
+            XLSX.writeFile(wb, `غياب_أمامة_بنت_بشر_${date}.xlsx`);
+        }
+    </script>
+</body>
+</html>
